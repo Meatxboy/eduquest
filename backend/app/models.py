@@ -72,6 +72,7 @@ class UserTask(Base):
 
     status: Mapped[TaskStatus] = mapped_column(default=TaskStatus.pending)
     order_index: Mapped[int] = mapped_column(Integer, default=0)
+    available_on: Mapped[date] = mapped_column(Date, default=date.today, index=True)
     assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

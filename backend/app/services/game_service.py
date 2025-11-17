@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
-from ..data import TASKS_PLAN
+from ..data import TASKS_PLAN, resolve_goal_template
 from ..models import DailyGoal, DailyGoalStatus, Task, TaskStatus, User, UserTask
 from ..schemas import AttributeSchema, DailyGoalSchema, HealthSchema, ProgressSchema, TaskPreview, UserStateResponse
 
@@ -28,6 +29,11 @@ async def ensure_user(session: AsyncSession, telegram_id: int, username: str | N
     await ensure_daily_goals(session, user)
     await session.commit()
     return user
+
+
+def _program_day_number(user: User, target_date: date) -> int:
+    base = (user.created_at or datetime.utcnow()).date()
+    return (target_date - base).days
 
 
 async def ensure_task_catalog(session: AsyncSession) -> dict[str, Task]:
@@ -62,6 +68,7 @@ async def assign_initial_tasks(session: AsyncSession, user: User) -> None:
         return
 
     tasks_by_title = await ensure_task_catalog(session)
+    base_date = (user.created_at or datetime.utcnow()).date()
 
     assignments = []
     for index, template in enumerate(TASKS_PLAN):
@@ -72,6 +79,7 @@ async def assign_initial_tasks(session: AsyncSession, user: User) -> None:
                 task_id=task.id,
                 status=TaskStatus.pending,
                 order_index=index,
+                available_on=base_date + timedelta(days=int(template.get("day_offset", 0))),
             )
         )
 
@@ -79,29 +87,51 @@ async def assign_initial_tasks(session: AsyncSession, user: User) -> None:
     await session.flush()
 
 
-async def ensure_daily_goals(session: AsyncSession, user: User) -> None:
-    for delta in (-1, 0, 1):
-        target_date = date.today() + timedelta(days=delta)
+async def ensure_daily_goals(
+    session: AsyncSession,
+    user: User,
+    target_dates: Iterable[date] | None = None,
+) -> None:
+    if target_dates is None:
+        target_dates = [date.today() + timedelta(days=delta) for delta in (-1, 0, 1)]
+
+    created = False
+    for target_date in target_dates:
         existing = await session.execute(
             select(DailyGoal).where(DailyGoal.user_id == user.id, DailyGoal.date == target_date)
         )
         goal = existing.scalar_one_or_none()
-        if not goal:
-            session.add(
-                DailyGoal(
-                    user_id=user.id,
-                    date=target_date,
-                    title=f"Цель на {target_date.strftime('%d.%m')}",
-                    description="Опиши свой фокус",
-                    status=DailyGoalStatus.pending,
-                )
+        if goal:
+            continue
+
+        day_number = _program_day_number(user, target_date)
+        template = resolve_goal_template(day_number)
+        session.add(
+            DailyGoal(
+                user_id=user.id,
+                date=target_date,
+                title=template.title,
+                description=template.description,
+                status=DailyGoalStatus.pending,
             )
-    await session.flush()
+        )
+        created = True
+
+    if created:
+        await session.flush()
 
 
 async def get_user_state(session: AsyncSession, user: User) -> UserStateResponse:
+    await ensure_daily_goals(session, user)
+
     result = await session.execute(
-        select(UserTask).where(UserTask.user_id == user.id, UserTask.status != TaskStatus.completed).order_by(UserTask.order_index)
+        select(UserTask)
+        .where(
+            UserTask.user_id == user.id,
+            UserTask.status != TaskStatus.completed,
+            UserTask.available_on <= date.today(),
+        )
+        .order_by(UserTask.available_on, UserTask.order_index)
     )
     tasks = result.scalars().all()
     current_assignment = tasks[0] if tasks else None
@@ -181,6 +211,9 @@ async def complete_task(
     assignment = result.scalar_one_or_none()
     if not assignment:
         raise ValueError("Task not assigned to user")
+
+    if assignment.available_on > date.today():
+        raise ValueError("Task недоступна для выполнения сегодня")
 
     await session.refresh(assignment, attribute_names=["task"])
 
