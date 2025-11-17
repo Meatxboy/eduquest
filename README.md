@@ -41,7 +41,7 @@
 - Логи — JSON через `structlog` в stdout для backend и бота.
 - Метрики — `/metrics` через `prometheus-fastapi-instrumentator` на backend.
 - Health-check — `GET /health` на backend и боте.
-
+git clone https://github.com/Meatxboy/eduquest eduquest && cd eduquest
 ## Следующие шаги
 
 - Добавить настоящие миграции (Alembic) и seed-скрипты.

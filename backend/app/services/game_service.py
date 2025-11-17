@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import settings
+from ..data import TASKS_PLAN
 from ..models import DailyGoal, DailyGoalStatus, Task, TaskStatus, User, UserTask
 from ..schemas import AttributeSchema, DailyGoalSchema, HealthSchema, ProgressSchema, TaskPreview, UserStateResponse
 
@@ -29,21 +30,42 @@ async def ensure_user(session: AsyncSession, telegram_id: int, username: str | N
     return user
 
 
-async def assign_initial_tasks(session: AsyncSession, user: User) -> None:
+async def ensure_task_catalog(session: AsyncSession) -> dict[str, Task]:
     result = await session.execute(select(Task))
     tasks = result.scalars().all()
+    tasks_by_title = {task.title: task for task in tasks}
+    created = False
 
-    if not tasks:
-        tasks = [
-            Task(title="Разобраться с приложением", description="Ознакомься с новыми механиками"),
-            Task(title="Выбрать цель дня", description="Поставь достижимую цель на сегодня"),
-            Task(title="Отметить первую победу", description="Заверши любую задачу"),
-        ]
-        session.add_all(tasks)
+    for task_template in TASKS_PLAN:
+        if task_template["title"] in tasks_by_title:
+            continue
+        task = Task(
+            title=task_template["title"],
+            description=task_template["description"],
+            difficulty=task_template["difficulty"],
+            xp_reward=task_template["xp_reward"],
+            health_delta=task_template["health_delta"],
+        )
+        session.add(task)
+        tasks_by_title[task.title] = task
+        created = True
+
+    if created:
         await session.flush()
 
+    return tasks_by_title
+
+
+async def assign_initial_tasks(session: AsyncSession, user: User) -> None:
+    existing_assignments = await session.execute(select(UserTask.id).where(UserTask.user_id == user.id))
+    if existing_assignments.first():
+        return
+
+    tasks_by_title = await ensure_task_catalog(session)
+
     assignments = []
-    for index, task in enumerate(tasks[:5]):
+    for index, template in enumerate(TASKS_PLAN):
+        task = tasks_by_title[template["title"]]
         assignments.append(
             UserTask(
                 user_id=user.id,
