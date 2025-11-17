@@ -60,27 +60,28 @@ services:
     ports:
       - "4173:80"
 
-n8n:
-  image: n8nio/n8n:latest
-  restart: unless-stopped
-  ports:
-    - "5678:5678"
-  environment:
-    - DB_TYPE=postgresdb              # база, где n8n хранит свои workflow
-    - DB_POSTGRESDB_HOST=postgres
-    - DB_POSTGRESDB_PORT=5432
-    - DB_POSTGRESDB_DATABASE=n8n      # можно создать отдельную БД, чтобы не смешивать данные с приложением
-    - DB_POSTGRESDB_USER=postgres
-    - DB_POSTGRESDB_PASSWORD=postgres
-    - N8N_BASIC_AUTH_ACTIVE=true
-    - N8N_BASIC_AUTH_USER=admin
-    - N8N_BASIC_AUTH_PASSWORD=anotherpass
-  volumes:
-    - n8n_data:/home/node/.n8n
-  depends_on:
-    - postgres
-
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=postgres
+      - GENERIC_TIMEZONE=Europe/Moscow
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=anotherpass
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      - postgres
 
 volumes:
   postgres_data:
   redis_data:
+  n8n_data:
