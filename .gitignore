@@ -1,0 +1,25 @@
+# env-файлы
+backend/.env
+frontend/.env
+bot/.env
+
+# Логи
+*.log
+logs/
+*.tmp
+
+# Python
+venv/
+.env/
+__pycache__/
+*.pyc
+
+# Node.js
+node_modules/
+dist/
+.build/
+
+# IDE/системные файлы
+.vscode/
+.idea/
+.DS_Store
